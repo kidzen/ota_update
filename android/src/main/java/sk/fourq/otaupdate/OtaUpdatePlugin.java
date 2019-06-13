@@ -108,7 +108,7 @@ public class OtaUpdatePlugin implements EventChannel.StreamHandler, PluginRegist
         try {
             final Context context = (registrar.activity() != null) ? registrar.activity() : registrar.context();
             //PREPARE URLS
-            final String destination = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) + "/" + "ordo.apk";
+            final String destination = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) + "/" + "app.apk";
             final Uri fileUri = Uri.parse("file://" + destination);
 
             //DELETE APK FILE IF SOME ALREADY EXISTS
