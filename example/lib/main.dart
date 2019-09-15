@@ -22,8 +22,9 @@ class _MyAppState extends State<MyApp> {
   Future<void> tryOtaUpdate() async {
     try {
       //LINK CONTAINS APK OF FLUTTER HELLO WORLD FROM FLUTTER SDK EXAMPLES
-      // OtaUpdate().execute('https://test1.4q.sk/flutter_hello_world.apk').listen(
-      OtaUpdate().execute('http://192.168.0.180/api/mobile-sync/app').listen(
+      OtaUpdate()
+          .execute('https://test1.4q.sk/flutter_hello_world.apk')
+          .listen(
         (OtaEvent event) {
           setState(() => currentEvent = event);
         },
@@ -44,7 +45,8 @@ class _MyAppState extends State<MyApp> {
           title: const Text('Plugin example app'),
         ),
         body: Center(
-          child: Text('OTA status: ${currentEvent.status} : ${currentEvent.value} \n'),
+          child: Text(
+              'OTA status: ${currentEvent.status} : ${currentEvent.value} \n'),
         ),
       ),
     );

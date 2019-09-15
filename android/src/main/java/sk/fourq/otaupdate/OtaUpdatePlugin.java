@@ -11,6 +11,8 @@ import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Message;
 import android.os.Environment;
 import android.util.Log;
 import io.flutter.plugin.common.EventChannel;
@@ -38,11 +40,23 @@ public class OtaUpdatePlugin implements EventChannel.StreamHandler, PluginRegist
     private final Registrar registrar;
     private EventChannel.EventSink progressSink;
     private String downloadUrl;
-
+    private String androidProviderAuthority = "sk.fourq.ota_update.provider"; //FALLBACK provider authority
     private static final String TAG = "FLUTTER OTA";
+    private Handler handler;
+    private Context context;
 
     private OtaUpdatePlugin(Registrar registrar) {
         this.registrar = registrar;
+        context = (registrar.activity() != null) ? registrar.activity() : registrar.context();
+        handler = new Handler(context.getMainLooper()) {
+            @Override
+            public void handleMessage(Message msg) {
+                super.handleMessage(msg);
+                if (progressSink != null) {
+                    progressSink.success(Arrays.asList("" + OtaStatus.DOWNLOADING.ordinal(), "" + ((msg.arg1 * 100) / msg.arg2)));
+                }
+            }
+        };
     }
 
     /**
@@ -61,7 +75,15 @@ public class OtaUpdatePlugin implements EventChannel.StreamHandler, PluginRegist
             progressSink.error("" + OtaStatus.ALREADY_RUNNING_ERROR.ordinal(), "Method call was cancelled. One method call is already running", null);
         }
         progressSink = events;
-        downloadUrl = ((Map)arguments).get("url").toString();
+        downloadUrl = ((Map) arguments).get("url").toString();
+
+        // user-provided provider authority
+        Object authority = ((Map) arguments).get("androidProviderAuthority");
+        if (authority != null) {
+            androidProviderAuthority = authority.toString();
+        } else {
+            androidProviderAuthority = context.getPackageName() + "." + "ota_update_provider";
+        }
 
         if (
 //                PackageManager.PERMISSION_GRANTED == ContextCompat.checkSelfPermission(registrar.context(), Manifest.permission.ACCESS_WIFI_STATE) &&
@@ -106,7 +128,6 @@ public class OtaUpdatePlugin implements EventChannel.StreamHandler, PluginRegist
 
     private void handleCall() {
         try {
-            final Context context = (registrar.activity() != null) ? registrar.activity() : registrar.context();
             //PREPARE URLS
             final String destination = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) + "/" + "app.apk";
             final Uri fileUri = Uri.parse("file://" + destination);
@@ -139,7 +160,7 @@ public class OtaUpdatePlugin implements EventChannel.StreamHandler, PluginRegist
                     Intent intent;
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                         //AUTHORITY NEEDS TO BE THE SAME ALSO IN MANIFEST
-                        Uri apkUri = FileProvider.getUriForFile(context, "sk.fourq.ota_update.provider", new File(destination));
+                        Uri apkUri = FileProvider.getUriForFile(context, androidProviderAuthority, new File(destination));
                         intent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
                         intent.setData(apkUri);
                         intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
@@ -149,15 +170,19 @@ public class OtaUpdatePlugin implements EventChannel.StreamHandler, PluginRegist
                         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     }
                     //SEND INSTALLING EVENT
-                    progressSink.success(Arrays.asList("" + OtaStatus.INSTALLING.ordinal(), ""));
-                    progressSink.endOfStream();
-                    progressSink = null;
-                    context.startActivity(intent);
+                    if(progressSink != null){
+                        progressSink.success(Arrays.asList("" + OtaStatus.INSTALLING.ordinal(), ""));
+                        progressSink.endOfStream();
+                        progressSink = null;
+                        context.startActivity(intent);
+                    }
                 }
             }, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
         } catch (Exception e) {
-            progressSink.error("" + OtaStatus.INTERNAL_ERROR.ordinal(), e.getMessage(), null);
-            progressSink = null;
+            if(progressSink != null){
+                progressSink.error("" + OtaStatus.INTERNAL_ERROR.ordinal(), e.getMessage(), null);
+                progressSink = null;
+            }
             Log.e(TAG, "ERROR: " + e.getMessage(), e);
         }
     }
@@ -178,7 +203,10 @@ public class OtaUpdatePlugin implements EventChannel.StreamHandler, PluginRegist
                     int bytes_downloaded = c.getInt(c.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
                     int bytes_total = c.getInt(c.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES));
                     if (progressSink != null) {
-                        progressSink.success(Arrays.asList("" + OtaStatus.DOWNLOADING.ordinal(), "" + ((bytes_downloaded * 100) / bytes_total)));
+                        Message message = new Message();
+                        message.arg1 = bytes_downloaded;
+                        message.arg2 = bytes_total;
+                        handler.sendMessage(message);
                     }
                     //STOP CYCLE IF DOWNLOAD IS COMPLETE
                     if (c.getInt(c.getColumnIndex(DownloadManager.COLUMN_STATUS)) == DownloadManager.STATUS_SUCCESSFUL) {
